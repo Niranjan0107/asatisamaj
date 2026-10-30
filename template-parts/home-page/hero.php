@@ -3,7 +3,7 @@
 $hero_image = get_template_directory_uri() . '/assets/images/community-hero.png';
 global $wpdb;
 $active_member_count = (int) $wpdb->get_var( $wpdb->prepare(
-	'SELECT COUNT(*) FROM ' . samanvay_members_table() . " WHERE status = 'active' AND membership_expires > %s",
+	'SELECT COUNT(*) FROM ' . samanvay_members_table() . " WHERE status = 'active' AND (is_lifetime_free = 1 OR membership_expires > %s)",
 	current_time( 'mysql', true )
 ) );
 ?>
