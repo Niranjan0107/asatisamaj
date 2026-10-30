@@ -1,0 +1,3 @@
+<?php /** Search results. @package Samanvay */ get_header(); ?>
+<main id="primary"><header class="page-header"><div class="site-container"><span class="eyebrow"><?php esc_html_e( 'Search', 'samanvay' ); ?></span><h1><?php printf( esc_html__( 'Results for “%s”', 'samanvay' ), esc_html( get_search_query() ) ); ?></h1></div></header><div class="content-area"><div class="site-container"><div class="posts-grid"><?php if ( have_posts() ) : while ( have_posts() ) : the_post(); get_template_part( 'template-parts/content', 'card' ); endwhile; else : get_template_part( 'template-parts/content', 'none' ); endif; ?></div><?php the_posts_pagination(); ?></div></div></main>
+<?php get_footer(); ?>

@@ -1,0 +1,2 @@
+<?php /** Search form. @package Samanvay */ ?>
+<form role="search" method="get" class="search-form" action="<?php echo esc_url( home_url( '/' ) ); ?>"><label class="screen-reader-text" for="sam-search"><?php esc_html_e( 'Search for:', 'samanvay' ); ?></label><input id="sam-search" type="search" class="search-field" placeholder="<?php esc_attr_e( 'Search…', 'samanvay' ); ?>" value="<?php echo esc_attr( get_search_query() ); ?>" name="s"><button type="submit" class="search-submit"><?php esc_html_e( 'Search', 'samanvay' ); ?></button></form>
