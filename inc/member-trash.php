@@ -39,7 +39,7 @@ function samanvay_handle_member_trash_action() {
 	if ( 'restore' === $decision ) {
 		if ( ! get_userdata( $member->user_id ) ) { wp_die( esc_html__( 'The associated login account is missing and cannot be restored.', 'samanvay' ) ); }
 		$status = in_array( $member->pre_trash_status, array( 'active', 'expired', 'pending_payment', 'payment_review', 'payment_rejected' ), true ) ? $member->pre_trash_status : 'pending_payment';
-		if ( 'active' === $status && ! samanvay_member_is_lifetime( $member ) && ( ! $member->membership_expires || strtotime( $member->membership_expires . ' UTC' ) <= time() ) ) { $status = 'expired'; }
+		if ( 'active' === $status && ( ! $member->membership_expires || strtotime( $member->membership_expires . ' UTC' ) <= time() ) ) { $status = 'expired'; }
 		if ( ! $wpdb->update( samanvay_members_table(), array( 'status' => $status, 'pre_trash_status' => null, 'trashed_at' => null, 'updated_at' => current_time( 'mysql', true ) ), array( 'id' => $id, 'status' => 'trashed' ) ) ) { wp_die( esc_html__( 'Restore failed. Please retry.', 'samanvay' ) ); }
 		update_user_meta( $member->user_id, 'samanvay_member_status', $status );
 	} else {
