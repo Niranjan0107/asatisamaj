@@ -14,6 +14,7 @@ define( 'SAMANVAY_VERSION', '7.0.0' );
 require_once get_template_directory() . '/inc/customizer.php';
 require_once get_template_directory() . '/inc/theme-settings.php';
 require_once get_template_directory() . '/inc/membership.php';
+require_once get_template_directory() . '/inc/registration-drafts.php';
 require_once get_template_directory() . '/inc/member-trash.php';
 require_once get_template_directory() . '/inc/member-table.php';
 

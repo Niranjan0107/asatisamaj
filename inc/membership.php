@@ -9,7 +9,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SAMANVAY_MEMBERSHIP_DB_VERSION', '2.1.0' );
+define( 'SAMANVAY_MEMBERSHIP_DB_VERSION', '2.2.0' );
+
+/** Lifetime entitlement belongs to the member, independently of the current setting. */
+function samanvay_member_is_lifetime( $member ) {
+	return $member && ! empty( $member->is_lifetime_free );
+}
 
 /** Allocate a durable sequence number; deleted members' numbers are never reused. */
 function samanvay_assign_member_identifiers( $member_id ) {
@@ -90,6 +95,7 @@ function samanvay_install_membership_tables() {
 		nominee_two_relationship varchar(120) NOT NULL DEFAULT '',
 		profile_picture_id bigint(20) unsigned NOT NULL DEFAULT 0,
 		status varchar(30) NOT NULL DEFAULT 'pending_payment',
+		is_lifetime_free tinyint(1) unsigned NOT NULL DEFAULT 0,
 		pre_trash_status varchar(30) NULL,
 		trashed_at datetime NULL,
 		membership_start datetime NULL,
@@ -233,6 +239,7 @@ function samanvay_membership_redirect( $args = array() ) {
 }
 
 function samanvay_membership_error_message( $code ) {
+	if ( 'lifetime_payment' === $code ) { return __( 'आपकी सदस्यता आजीवन निःशुल्क है। किसी भुगतान की आवश्यकता नहीं है।', 'samanvay' ); }
 	$password_errors = array(
 		'current_password' => __( 'वर्तमान पासवर्ड सही नहीं है।', 'samanvay' ),
 		'new_password' => __( 'नया पासवर्ड कम से कम 8 अक्षरों का होना चाहिए और पुष्टि पासवर्ड से मेल खाना चाहिए।', 'samanvay' ),
@@ -481,6 +488,9 @@ function samanvay_issue_payment_token( $member_id ) {
 }
 
 function samanvay_verify_payment_token( $member_id, $token ) {
+	if ( ! $member_id ) {
+		return samanvay_get_registration_draft( $token );
+	}
 	global $wpdb;
 	$member = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . samanvay_members_table() . ' WHERE id = %d', $member_id ) );
 	if ( ! $member || 'trashed' === $member->status || ! $token || ! $member->payment_token_hash || strtotime( $member->payment_token_expires . ' UTC' ) < time() ) {
@@ -564,36 +574,12 @@ function samanvay_handle_member_registration() {
 	if ( email_exists( $fields['email'] ) ) {
 		samanvay_membership_redirect( array( 'registration_error' => 'exists' ) );
 	}
-	$user_id = wp_insert_user( array(
-		'user_login'   => samanvay_unique_member_login( $fields['email'] ),
-		'user_email'   => $fields['email'],
-		'user_pass'    => wp_generate_password( 32, true, true ),
-		'display_name' => $fields['full_name'],
-		'first_name'   => $fields['full_name'],
-		'role'         => 'samanvay_member',
-	) );
-	if ( is_wp_error( $user_id ) ) {
+	$token = wp_generate_password( 48, false, false );
+	$fields['is_lifetime_free'] = (int) (bool) samanvay_get_theme_setting( 'free_lifetime_membership' );
+	if ( ! set_transient( samanvay_registration_draft_key( $token ), $fields, DAY_IN_SECONDS ) ) {
 		samanvay_membership_redirect( array( 'registration_error' => 'create_failed' ) );
 	}
-	global $wpdb;
-	$now = current_time( 'mysql', true );
-	$inserted = $wpdb->insert( samanvay_members_table(), array_merge( $fields, array( 'user_id' => $user_id, 'status' => 'pending_payment', 'created_at' => $now, 'updated_at' => $now ) ), array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s' ) );
-	if ( ! $inserted ) {
-		require_once ABSPATH . 'wp-admin/includes/user.php';
-		wp_delete_user( $user_id );
-		samanvay_membership_redirect( array( 'registration_error' => 'create_failed' ) );
-	}
-	$member_id = (int) $wpdb->insert_id;
-	if ( ! samanvay_assign_member_identifiers( $member_id ) ) {
-		$wpdb->delete( samanvay_members_table(), array( 'id' => $member_id ), array( '%d' ) );
-		require_once ABSPATH . 'wp-admin/includes/user.php';
-		wp_delete_user( $user_id );
-		samanvay_membership_redirect( array( 'registration_error' => 'create_failed' ) );
-	}
-	update_user_meta( $user_id, 'samanvay_initial_password_pending', 1 );
-	update_user_meta( $user_id, 'samanvay_member_status', 'pending_payment' );
-	$token = samanvay_issue_payment_token( $member_id );
-	samanvay_membership_redirect( array( 'membership_step' => 'family', 'member_id' => $member_id, 'member_token' => $token ) );
+	samanvay_membership_redirect( array( 'membership_step' => 'family', 'member_id' => 0, 'member_token' => $token ) );
 }
 add_action( 'admin_post_nopriv_samanvay_register_member', 'samanvay_handle_member_registration' );
 add_action( 'admin_post_samanvay_register_member', 'samanvay_handle_member_registration' );
@@ -620,6 +606,24 @@ function samanvay_handle_member_family_details() {
 	}
 	if ( ! in_array( $gender, array( 'male', 'female', 'other' ), true ) || ! samanvay_is_valid_birth_date( $date_of_birth ) || '' === $father_name || ! in_array( $marital_status, array( 'unmarried', 'married', 'widowed', 'divorced' ), true ) || ! in_array( $employment_sector, array( 'government', 'non_government', 'business', 'housewife' ), true ) || ( 'housewife' === $employment_sector && 'female' !== $gender ) || '' === $nominee_one_name || ! array_key_exists( $nominee_one_relationship, samanvay_get_nominee_relationships() ) || '' === $nominee_two_name || ! array_key_exists( $nominee_two_relationship, samanvay_get_nominee_relationships() ) ) {
 		samanvay_membership_redirect( array( 'membership_step' => 'family', 'member_id' => $member_id, 'member_token' => $token, 'registration_error' => 'required' ) );
+	}
+
+	if ( ! $member_id ) {
+		$draft = (array) $member;
+		foreach ( array( 'gender', 'date_of_birth', 'father_name', 'marital_status', 'employment_sector', 'nominee_one_name', 'nominee_one_relationship', 'nominee_two_name', 'nominee_two_relationship' ) as $field ) {
+			$draft[ $field ] = $$field;
+		}
+		if ( ! set_transient( samanvay_registration_draft_key( $token ), $draft, DAY_IN_SECONDS ) && get_transient( samanvay_registration_draft_key( $token ) ) !== $draft ) {
+			samanvay_membership_redirect( array( 'membership_step' => 'family', 'member_token' => $token, 'registration_error' => 'create_failed' ) );
+		}
+		if ( samanvay_member_is_lifetime( (object) $draft ) ) {
+			$result = samanvay_complete_registration_draft( $token, '', 0, true );
+			if ( is_wp_error( $result ) ) {
+				samanvay_membership_redirect( array( 'membership_step' => 'family', 'member_token' => $token, 'registration_error' => $result->get_error_code() ) );
+			}
+			samanvay_membership_redirect( array( 'membership_step' => 'thanks', 'free_registered' => 1 ) );
+		}
+		samanvay_membership_redirect( array( 'membership_step' => 'payment', 'member_id' => 0, 'member_token' => $token ) );
 	}
 
 	global $wpdb;
@@ -664,13 +668,16 @@ function samanvay_handle_member_payment() {
 	$member_id = isset( $_POST['member_id'] ) ? absint( $_POST['member_id'] ) : 0;
 	$token = isset( $_POST['member_token'] ) ? sanitize_text_field( wp_unslash( $_POST['member_token'] ) ) : '';
 	$transaction_id = isset( $_POST['transaction_id'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['transaction_id'] ) ) ) : '';
-	$from_dashboard = is_user_logged_in();
+	$from_dashboard = is_user_logged_in() && '' === $token;
 	$member = $from_dashboard ? samanvay_get_member_by_user( get_current_user_id() ) : samanvay_verify_payment_token( $member_id, $token );
 	if ( $from_dashboard && ( ! $member || (int) $member->id !== $member_id ) ) {
 		$member = false;
 	}
 	if ( ! $member ) {
 		$from_dashboard ? samanvay_dashboard_redirect( array( 'dashboard_error' => 'invalid_session' ) ) : samanvay_membership_redirect( array( 'registration_error' => 'invalid_session' ) );
+	}
+	if ( samanvay_member_is_lifetime( $member ) ) {
+		$from_dashboard ? samanvay_dashboard_redirect( array( 'dashboard_error' => 'lifetime_payment' ) ) : samanvay_membership_redirect( array( 'membership_step' => 'family', 'member_token' => $token ) );
 	}
 	if ( ! $from_dashboard && ! samanvay_member_has_family_details( $member ) ) {
 		samanvay_membership_redirect( array( 'membership_step' => 'family', 'member_id' => $member_id, 'member_token' => $token, 'registration_error' => 'required' ) );
@@ -703,6 +710,14 @@ function samanvay_handle_member_payment() {
 			$from_dashboard ? samanvay_dashboard_redirect( array( 'dashboard_error' => 'upload_failed' ) ) : samanvay_membership_redirect( array( 'membership_step' => 'payment', 'member_id' => $member_id, 'member_token' => $token, 'payment_error' => 'upload_failed' ) );
 		}
 	}
+	if ( ! $from_dashboard && ! $member_id ) {
+		$result = samanvay_complete_registration_draft( $token, $transaction_id, $attachment_id );
+		if ( is_wp_error( $result ) ) {
+			if ( $attachment_id ) { wp_delete_attachment( $attachment_id, true ); }
+			samanvay_membership_redirect( array( 'membership_step' => 'payment', 'member_token' => $token, 'payment_error' => $result->get_error_code() ) );
+		}
+		samanvay_membership_redirect( array( 'membership_step' => 'thanks' ) );
+	}
 	$now = current_time( 'mysql', true );
 	// Determine the payment purpose from the authenticated flow, never a posted type or amount.
 	$payment_type = $from_dashboard ? 'membership' : 'registration_first';
@@ -729,8 +744,8 @@ add_action( 'admin_post_samanvay_submit_member_payment', 'samanvay_handle_member
 function samanvay_expire_memberships_now() {
 	global $wpdb;
 	$now = current_time( 'mysql', true );
-	$user_ids = $wpdb->get_col( $wpdb->prepare( 'SELECT user_id FROM ' . samanvay_members_table() . " WHERE status = 'active' AND membership_expires IS NOT NULL AND membership_expires <= %s", $now ) );
-	$wpdb->query( $wpdb->prepare( 'UPDATE ' . samanvay_members_table() . " SET status = 'expired', updated_at = %s WHERE status = 'active' AND membership_expires IS NOT NULL AND membership_expires <= %s", $now, $now ) );
+	$user_ids = $wpdb->get_col( $wpdb->prepare( 'SELECT user_id FROM ' . samanvay_members_table() . " WHERE status = 'active' AND is_lifetime_free = 0 AND membership_expires IS NOT NULL AND membership_expires <= %s", $now ) );
+	$wpdb->query( $wpdb->prepare( 'UPDATE ' . samanvay_members_table() . " SET status = 'expired', updated_at = %s WHERE status = 'active' AND is_lifetime_free = 0 AND membership_expires IS NOT NULL AND membership_expires <= %s", $now, $now ) );
 	foreach ( $user_ids as $user_id ) {
 		update_user_meta( $user_id, 'samanvay_member_status', 'expired' );
 	}
@@ -754,8 +769,8 @@ function samanvay_handle_payment_review() {
 	if ( ! $payment || ! in_array( $payment->payment_type, array( 'membership', 'registration_first' ), true ) || 'pending' !== $payment->status || ! in_array( $decision, array( 'approve', 'reject' ), true ) ) {
 		wp_die( esc_html__( 'Invalid payment review request.', 'samanvay' ), 400 );
 	}
-	$review_member = $wpdb->get_row( $wpdb->prepare( 'SELECT status FROM ' . samanvay_members_table() . ' WHERE id = %d', $payment->member_id ) );
-	if ( ! $review_member || 'trashed' === $review_member->status ) { wp_die( esc_html__( 'Restore this member before reviewing payments.', 'samanvay' ) ); }
+	$review_member = $wpdb->get_row( $wpdb->prepare( 'SELECT status, is_lifetime_free FROM ' . samanvay_members_table() . ' WHERE id = %d', $payment->member_id ) );
+	if ( ! $review_member || 'trashed' === $review_member->status || samanvay_member_is_lifetime( $review_member ) ) { wp_die( esc_html__( 'Payment review is not available for trashed or lifetime-free members.', 'samanvay' ) ); }
 	$now = current_time( 'mysql', true );
 	$status = 'approve' === $decision ? 'approved' : 'rejected';
 	$wpdb->update( samanvay_member_payments_table(), array( 'status' => $status, 'reviewed_at' => $now, 'reviewed_by' => get_current_user_id() ), array( 'id' => $payment_id ), array( '%s', '%s', '%d' ), array( '%d' ) );
@@ -916,7 +931,7 @@ function samanvay_render_members_admin_page() {
 	<?php if ( ! $members ) : ?><tr><td colspan="<?php echo samanvay_get_theme_setting( 'member_deletion_enabled' ) ? 5 : 4; ?>"><?php esc_html_e( 'No members found.', 'samanvay' ); ?></td></tr><?php endif; ?>
 	<?php foreach ( $members as $member ) : ?>
 		<?php $member_payments = isset( $payment_history[ (int) $member->id ] ) ? $payment_history[ (int) $member->id ] : array(); ?>
-	<tr><?php if ( samanvay_get_theme_setting( 'member_deletion_enabled' ) ) : ?><th scope="row" class="check-column"><input type="checkbox" class="member-bulk-checkbox" name="member_ids[]" form="samanvay-bulk-members" value="<?php echo esc_attr( $member->id ); ?>" aria-label="<?php echo esc_attr( sprintf( __( 'Select %s', 'samanvay' ), $member->full_name ) ); ?>" <?php disabled( ! samanvay_can_delete_community_member( $member ) ); ?>></th><?php endif; ?><td><strong><?php echo esc_html( $member->full_name ); ?></strong><br><small><?php echo esc_html( sprintf( __( 'Member ID: %1$s | Family ID: %2$s', 'samanvay' ), $member->member_code ?? '—', $member->family_code ?? '—' ) ); ?></small><br><a href="mailto:<?php echo esc_attr( $member->email ); ?>"><?php echo esc_html( $member->email ); ?></a><br><small><?php echo esc_html( $member->address . ' – ' . $member->pin_code ); ?></small><?php if ( samanvay_can_delete_community_member( $member ) ) : ?><details style="margin-top:12px"><summary><?php esc_html_e( 'Move to Trash', 'samanvay' ); ?></summary><form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"><?php wp_nonce_field( 'samanvay_delete_member_' . $member->id ); ?><input type="hidden" name="action" value="samanvay_delete_community_member"><input type="hidden" name="member_id" value="<?php echo esc_attr( $member->id ); ?>"><p><?php esc_html_e( 'Moves this member to Trash and disables their login. Restore or permanently delete them from Trashed Members.', 'samanvay' ); ?></p><p><label><input type="checkbox" name="confirm_delete" value="1" required> <?php echo esc_html( sprintf( __( 'Confirm moving %s to Trash', 'samanvay' ), $member->full_name ) ); ?></label></p><button type="submit" class="button"><?php esc_html_e( 'Move member to Trash', 'samanvay' ); ?></button></form></details><?php endif; ?></td><td><?php echo esc_html( $member->mobile ); ?><br><?php echo esc_html( $member->tehsil . ', ' . $member->district . ', ' . $member->state ); ?></td><td><strong><?php echo esc_html( ucwords( str_replace( '_', ' ', $member->status ) ) ); ?></strong><?php if ( $member->membership_start ) : ?><br><small><?php echo esc_html( sprintf( __( 'Started: %s', 'samanvay' ), get_date_from_gmt( $member->membership_start, get_option( 'date_format' ) ) ) ); ?></small><?php endif; ?><?php if ( $member->membership_expires ) : ?><br><small><?php echo esc_html( sprintf( __( 'Expires: %s', 'samanvay' ), get_date_from_gmt( $member->membership_expires, get_option( 'date_format' ) ) ) ); ?></small><?php endif; ?></td><td><?php if ( $member_payments ) : ?><details class="samanvay-payment-history"<?php echo 'pending' === $member_payments[0]->status ? ' open' : ''; ?>><summary><?php echo esc_html( sprintf( _n( '%d payment', '%d payments', count( $member_payments ), 'samanvay' ), count( $member_payments ) ) ); ?> <span><?php echo esc_html( ucfirst( $member_payments[0]->status ) ); ?></span></summary><div class="samanvay-payment-history__list"><?php foreach ( $member_payments as $payment ) : ?><?php $reviewer = $payment->reviewed_by ? get_userdata( $payment->reviewed_by ) : false; ?><article><?php if ( $payment->attachment_id ) : ?><a class="samanvay-payment-history__image" href="<?php echo esc_url( wp_get_attachment_url( $payment->attachment_id ) ); ?>" target="_blank" rel="noopener"><?php echo wp_get_attachment_image( $payment->attachment_id, array( 72, 72 ) ); ?></a><?php endif; ?><div class="samanvay-payment-history__details"><strong>#<?php echo esc_html( $payment->id ); ?> · <?php echo esc_html( ucfirst( $payment->status ) ); ?></strong><small><?php echo esc_html( 'registration_first' === $payment->payment_type ? __( 'Registration + first membership fee', 'samanvay' ) : ( 'registration' === $payment->payment_type ? __( 'Registration fee', 'samanvay' ) : __( 'Membership fee', 'samanvay' ) ) ); ?><?php if ( null !== $payment->amount ) : ?> · ₹<?php echo esc_html( number_format_i18n( (float) $payment->amount, 2 ) ); ?><?php endif; ?></small><small><?php echo esc_html( sprintf( __( 'Transaction ID: %s', 'samanvay' ), $payment->transaction_id ? $payment->transaction_id : '—' ) ); ?></small><small><?php echo esc_html( sprintf( __( 'Submitted: %s', 'samanvay' ), get_date_from_gmt( $payment->submitted_at, get_option( 'date_format' ) . ' ' . get_option( 'time_format' ) ) ) ); ?></small><?php if ( $payment->reviewed_at ) : ?><small><?php echo esc_html( sprintf( __( 'Reviewed: %1$s%2$s', 'samanvay' ), get_date_from_gmt( $payment->reviewed_at, get_option( 'date_format' ) . ' ' . get_option( 'time_format' ) ), $reviewer ? ' · ' . $reviewer->display_name : '' ) ); ?></small><?php endif; ?><?php if ( in_array( $payment->payment_type, array( 'membership', 'registration_first' ), true ) && 'pending' === $payment->status ) : ?><form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"><?php wp_nonce_field( 'samanvay_review_payment_' . $payment->id ); ?><input type="hidden" name="action" value="samanvay_review_member_payment"><input type="hidden" name="payment_id" value="<?php echo esc_attr( $payment->id ); ?>"><button class="button button-primary button-small" name="decision" value="approve"><?php esc_html_e( 'Approve', 'samanvay' ); ?></button> <button class="button button-small" name="decision" value="reject"><?php esc_html_e( 'Reject', 'samanvay' ); ?></button></form><?php endif; ?></div></article><?php endforeach; ?></div></details><?php else : esc_html_e( 'No payments submitted', 'samanvay' ); endif; ?></td></tr>
+	<tr><?php if ( samanvay_get_theme_setting( 'member_deletion_enabled' ) ) : ?><th scope="row" class="check-column"><input type="checkbox" class="member-bulk-checkbox" name="member_ids[]" form="samanvay-bulk-members" value="<?php echo esc_attr( $member->id ); ?>" aria-label="<?php echo esc_attr( sprintf( __( 'Select %s', 'samanvay' ), $member->full_name ) ); ?>" <?php disabled( ! samanvay_can_delete_community_member( $member ) ); ?>></th><?php endif; ?><td><strong><?php echo esc_html( $member->full_name ); ?></strong><br><small><?php echo esc_html( sprintf( __( 'Member ID: %1$s | Family ID: %2$s', 'samanvay' ), $member->member_code ?? '—', $member->family_code ?? '—' ) ); ?></small><br><a href="mailto:<?php echo esc_attr( $member->email ); ?>"><?php echo esc_html( $member->email ); ?></a><br><small><?php echo esc_html( $member->address . ' – ' . $member->pin_code ); ?></small><?php if ( samanvay_can_delete_community_member( $member ) ) : ?><details style="margin-top:12px"><summary><?php esc_html_e( 'Move to Trash', 'samanvay' ); ?></summary><form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"><?php wp_nonce_field( 'samanvay_delete_member_' . $member->id ); ?><input type="hidden" name="action" value="samanvay_delete_community_member"><input type="hidden" name="member_id" value="<?php echo esc_attr( $member->id ); ?>"><p><?php esc_html_e( 'Moves this member to Trash and disables their login. Restore or permanently delete them from Trashed Members.', 'samanvay' ); ?></p><p><label><input type="checkbox" name="confirm_delete" value="1" required> <?php echo esc_html( sprintf( __( 'Confirm moving %s to Trash', 'samanvay' ), $member->full_name ) ); ?></label></p><button type="submit" class="button"><?php esc_html_e( 'Move member to Trash', 'samanvay' ); ?></button></form></details><?php endif; ?></td><td><?php echo esc_html( $member->mobile ); ?><br><?php echo esc_html( $member->tehsil . ', ' . $member->district . ', ' . $member->state ); ?></td><td><strong><?php echo esc_html( ucwords( str_replace( '_', ' ', $member->status ) ) ); ?></strong><?php if ( samanvay_member_is_lifetime( $member ) ) : ?><br><strong><?php esc_html_e( 'Free lifetime membership', 'samanvay' ); ?></strong><?php endif; ?><?php if ( $member->membership_start ) : ?><br><small><?php echo esc_html( sprintf( __( 'Started: %s', 'samanvay' ), get_date_from_gmt( $member->membership_start, get_option( 'date_format' ) ) ) ); ?></small><?php endif; ?><?php if ( $member->membership_expires ) : ?><br><small><?php echo esc_html( sprintf( __( 'Expires: %s', 'samanvay' ), get_date_from_gmt( $member->membership_expires, get_option( 'date_format' ) ) ) ); ?></small><?php endif; ?></td><td><?php if ( $member_payments ) : ?><details class="samanvay-payment-history"<?php echo 'pending' === $member_payments[0]->status ? ' open' : ''; ?>><summary><?php echo esc_html( sprintf( _n( '%d payment', '%d payments', count( $member_payments ), 'samanvay' ), count( $member_payments ) ) ); ?> <span><?php echo esc_html( ucfirst( $member_payments[0]->status ) ); ?></span></summary><div class="samanvay-payment-history__list"><?php foreach ( $member_payments as $payment ) : ?><?php $reviewer = $payment->reviewed_by ? get_userdata( $payment->reviewed_by ) : false; ?><article><?php if ( $payment->attachment_id ) : ?><a class="samanvay-payment-history__image" href="<?php echo esc_url( wp_get_attachment_url( $payment->attachment_id ) ); ?>" target="_blank" rel="noopener"><?php echo wp_get_attachment_image( $payment->attachment_id, array( 72, 72 ) ); ?></a><?php endif; ?><div class="samanvay-payment-history__details"><strong>#<?php echo esc_html( $payment->id ); ?> · <?php echo esc_html( ucfirst( $payment->status ) ); ?></strong><small><?php echo esc_html( 'registration_first' === $payment->payment_type ? __( 'Registration + first membership fee', 'samanvay' ) : ( 'registration' === $payment->payment_type ? __( 'Registration fee', 'samanvay' ) : __( 'Membership fee', 'samanvay' ) ) ); ?><?php if ( null !== $payment->amount ) : ?> · ₹<?php echo esc_html( number_format_i18n( (float) $payment->amount, 2 ) ); ?><?php endif; ?></small><small><?php echo esc_html( sprintf( __( 'Transaction ID: %s', 'samanvay' ), $payment->transaction_id ? $payment->transaction_id : '—' ) ); ?></small><small><?php echo esc_html( sprintf( __( 'Submitted: %s', 'samanvay' ), get_date_from_gmt( $payment->submitted_at, get_option( 'date_format' ) . ' ' . get_option( 'time_format' ) ) ) ); ?></small><?php if ( $payment->reviewed_at ) : ?><small><?php echo esc_html( sprintf( __( 'Reviewed: %1$s%2$s', 'samanvay' ), get_date_from_gmt( $payment->reviewed_at, get_option( 'date_format' ) . ' ' . get_option( 'time_format' ) ), $reviewer ? ' · ' . $reviewer->display_name : '' ) ); ?></small><?php endif; ?><?php if ( in_array( $payment->payment_type, array( 'membership', 'registration_first' ), true ) && 'pending' === $payment->status ) : ?><form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"><?php wp_nonce_field( 'samanvay_review_payment_' . $payment->id ); ?><input type="hidden" name="action" value="samanvay_review_member_payment"><input type="hidden" name="payment_id" value="<?php echo esc_attr( $payment->id ); ?>"><button class="button button-primary button-small" name="decision" value="approve"><?php esc_html_e( 'Approve', 'samanvay' ); ?></button> <button class="button button-small" name="decision" value="reject"><?php esc_html_e( 'Reject', 'samanvay' ); ?></button></form><?php endif; ?></div></article><?php endforeach; ?></div></details><?php else : esc_html_e( 'No payments submitted', 'samanvay' ); endif; ?></td></tr>
 	<?php endforeach; ?></tbody></table></div>
 	<style>.samanvay-members-admin table .check-column{width:2.2em}.samanvay-members-admin table th:nth-child(2){width:22%}.samanvay-members-admin table th:nth-child(3){width:20%}.samanvay-payment-history summary{cursor:pointer;font-weight:600}.samanvay-payment-history summary span{display:inline-block;margin-left:6px;padding:2px 7px;border-radius:10px;background:#f0f0f1;font-size:11px}.samanvay-payment-history__list{display:grid;gap:10px;margin-top:12px;min-width:340px}.samanvay-payment-history__list article{display:flex;gap:12px;padding:10px;border:1px solid #dcdcde;border-radius:6px;background:#fff}.samanvay-payment-history__image img{width:72px;height:72px;border-radius:4px;object-fit:cover}.samanvay-payment-history__details{display:flex;flex:1;flex-direction:column;gap:3px}.samanvay-payment-history__details small{color:#646970}.samanvay-payment-history__details form{margin-top:6px}@media(max-width:1100px){.samanvay-members-admin table{display:block;overflow-x:auto}}</style>
 	<?php
@@ -947,8 +962,8 @@ function samanvay_active_members_shortcode( $atts ) {
 	samanvay_expire_memberships_now();
 	global $wpdb;
 	$table = samanvay_members_table();
-	$total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE status = 'active' AND membership_expires > %s", $now ) );
-	$members = $wpdb->get_results( $wpdb->prepare( "SELECT id, member_code, full_name, state, district, tehsil, profile_picture_id, membership_start FROM {$table} WHERE status = 'active' AND membership_expires > %s ORDER BY full_name ASC LIMIT %d OFFSET %d", $now, $per_page, $offset ) );
+	$total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE status = 'active' AND (is_lifetime_free = 1 OR membership_expires > %s)", $now ) );
+	$members = $wpdb->get_results( $wpdb->prepare( "SELECT id, member_code, full_name, state, district, tehsil, profile_picture_id, membership_start FROM {$table} WHERE status = 'active' AND (is_lifetime_free = 1 OR membership_expires > %s) ORDER BY full_name ASC LIMIT %d OFFSET %d", $now, $per_page, $offset ) );
 	$heading_id = wp_unique_id( 'active-members-title-' );
 
 	ob_start();
