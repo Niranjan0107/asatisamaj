@@ -53,7 +53,7 @@ $collage_image = get_template_directory_uri() . '/assets/images/about-community-
 
 	<section class="about-page__values" aria-labelledby="about-values-title">
 		<div class="site-container">
-			<header class="about-page__heading"><svg viewBox="0 0 54 18" aria-hidden="true"><path d="M2 10c5-8 10 8 15 0s10 8 15 0 10 8 20 0"/></svg><h2 id="about-values-title"><?php esc_html_e( 'हमारा संकल्प', 'samanvay' ); ?></h2><svg viewBox="0 0 54 18" aria-hidden="true"><path d="M2 10c5-8 10 8 15 0s10 8 15 0 10 8 20 0"/></svg></header>
+			<header class="about-page__heading"><svg viewBox="0 0 54 18" aria-hidden="true"><path d="M2 10c5-8 10 8 15 0s10 8 15 0 10 8 20 0"/></svg><h2 id="about-values-title"><?php esc_html_e( 'हमारे मूल मूल्य', 'samanvay' ); ?></h2><svg viewBox="0 0 54 18" aria-hidden="true"><path d="M2 10c5-8 10 8 15 0s10 8 15 0 10 8 20 0"/></svg></header>
 			<div class="about-page__values-grid">
 				<div><strong>01</strong><h3><?php esc_html_e( 'एकता', 'samanvay' ); ?></h3><p><?php esc_html_e( 'परिवारों को एक मजबूत सूत्र में जोड़ना।', 'samanvay' ); ?></p></div>
 				<div><strong>02</strong><h3><?php esc_html_e( 'पारदर्शिता', 'samanvay' ); ?></h3><p><?php esc_html_e( 'विश्वास और जवाबदेही के साथ कार्य करना।', 'samanvay' ); ?></p></div>
