@@ -12,6 +12,8 @@ get_header();
 <main id="primary">
 	<?php get_template_part( 'template-parts/home-page/hero' ); ?>
 	<?php get_template_part( 'template-parts/home-page/about' ); ?>
+		<?php get_template_part( 'template-parts/home-page/sahyog' ); ?>
+
 	<?php get_template_part( 'template-parts/home-page/support-plan' ); ?>
 	<?php //get_template_part( 'template-parts/home-page/asati-community' ); ?>
 	<?php get_template_part( 'template-parts/home-page/community-history' ); ?>

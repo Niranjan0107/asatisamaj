@@ -16,7 +16,7 @@ function samanvay_active_members_table_shortcode( $atts ) {
 	$page = isset( $_GET['samt_page'] ) && is_scalar( $_GET['samt_page'] ) ? max( 1, absint( $_GET['samt_page'] ) ) : 1;
 	$table = samanvay_members_table();
 	$now = current_time( 'mysql', true );
-	$where = "status = 'active' AND (is_lifetime_free = 1 OR membership_expires > %s)";
+	$where = "status = 'active' AND membership_expires > %s";
 	$args = array( $now );
 	if ( '' !== $filters['search'] ) {
 		$where .= ' AND (full_name LIKE %s OR state LIKE %s OR district LIKE %s OR tehsil LIKE %s)';
@@ -27,7 +27,7 @@ function samanvay_active_members_table_shortcode( $atts ) {
 	$options = array();
 	foreach ( $labels as $key => $label ) {
 		// Column names come only from the fixed allowlist above.
-		$options[ $key ] = $wpdb->get_col( $wpdb->prepare( "SELECT DISTINCT {$key} FROM {$table} WHERE status = 'active' AND (is_lifetime_free = 1 OR membership_expires > %s) AND {$key} <> '' ORDER BY {$key} ASC", $now ) );
+		$options[ $key ] = $wpdb->get_col( $wpdb->prepare( "SELECT DISTINCT {$key} FROM {$table} WHERE status = 'active' AND membership_expires > %s AND {$key} <> '' ORDER BY {$key} ASC", $now ) );
 		if ( '' !== $filters[ $key ] ) {
 			$where .= " AND {$key} = %s";
 			$args[] = $filters[ $key ];

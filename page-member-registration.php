@@ -11,16 +11,11 @@ if ( is_user_logged_in() && samanvay_get_member_by_user( get_current_user_id() )
 	exit;
 }
 
-nocache_headers();
-header( 'Referrer-Policy: same-origin' );
 get_header();
 $step       = isset( $_GET['membership_step'] ) ? sanitize_key( wp_unslash( $_GET['membership_step'] ) ) : 'details';
 $member_id  = isset( $_GET['member_id'] ) ? absint( $_GET['member_id'] ) : 0;
 $token      = isset( $_GET['member_token'] ) ? sanitize_text_field( wp_unslash( $_GET['member_token'] ) ) : '';
 $member     = in_array( $step, array( 'family', 'payment' ), true ) ? samanvay_verify_payment_token( $member_id, $token ) : false;
-$is_free_registration = $member ? samanvay_member_is_lifetime( $member ) : (bool) samanvay_get_theme_setting( 'free_lifetime_membership' );
-if ( 'thanks' === $step ) { $is_free_registration = ! empty( $_GET['free_registered'] ); }
-if ( 'payment' === $step && $is_free_registration ) { $step = 'family'; }
 $qr_id      = absint( samanvay_get_theme_setting( 'membership_qr' ) );
 $fee        = absint( samanvay_get_theme_setting( 'registration_fee' ) );
 
@@ -42,18 +37,18 @@ if ( in_array( $step, array( 'family', 'payment' ), true ) && ! $member ) {
 		<div class="site-container"><p class="membership-eyebrow">
 			<?php esc_html_e( 'समुदाय से जुड़ें', 'samanvay' ); ?></p>
 			<h1 id="membership-title"><?php esc_html_e( 'सदस्य पंजीकरण', 'samanvay' ); ?></h1>
-			<?php if ( $is_free_registration ) : ?><p><?php esc_html_e( 'निःशुल्क आजीवन सदस्यता — कोई पंजीकरण या सदस्यता शुल्क नहीं।', 'samanvay' ); ?></p><?php else : ?>
-			<p><?php echo esc_html( sprintf( __( '✶ रजिस्ट्रेशन फीस ₹%d (एक बार)', 'samanvay' ), $fee ) ); ?></p>
-			<p><?php echo esc_html( sprintf( __( '✶ सदस्यता ₹%d (प्रतिवर्ष)', 'samanvay' ), $membership_fee ) ); ?></p>
-			<?php endif; ?>
+			<p><?php //echo esc_html( sprintf( __( '✶ रजिस्ट्रेशन फीस ₹%d (एक बार)', 'samanvay' ), $fee ) ); ?></p>
+			<p><?php //echo esc_html( sprintf( __( '✶ सदस्यता ₹%d (प्रतिवर्ष)', 'samanvay' ), $membership_fee ) ); ?></p>
+			<p>रजिस्ट्रेशन फीस एवं सदस्यता - <b>निःशुल्क</b></p>
+			<small>कृपया फॉर्म में भुगतान पृष्ठ को ख़ाली छोड़ दे </small>
 		</div>
 	</section>
 	<section class="membership-main"><div class="site-container membership-shell">
-		<ol class="membership-steps<?php echo $is_free_registration ? ' membership-steps--free' : ''; ?>" aria-label="<?php esc_attr_e( 'Registration progress', 'samanvay' ); ?>">
+		<ol class="membership-steps" aria-label="<?php esc_attr_e( 'Registration progress', 'samanvay' ); ?>">
 			<li class="<?php echo 'details' === $step ? 'is-current' : 'is-complete'; ?>"><span>1</span><strong><?php esc_html_e( 'व्यक्तिगत जानकारी', 'samanvay' ); ?></strong></li>
 			<li class="<?php echo 'family' === $step ? 'is-current' : ( in_array( $step, array( 'payment', 'thanks' ), true ) ? 'is-complete' : '' ); ?>"><span>2</span><strong><?php esc_html_e( 'अन्य जानकारी', 'samanvay' ); ?></strong></li>
-			<?php if ( ! $is_free_registration ) : ?><li class="<?php echo 'payment' === $step ? 'is-current' : ( 'thanks' === $step ? 'is-complete' : '' ); ?>"><span>3</span><strong><?php esc_html_e( 'भुगतान', 'samanvay' ); ?></strong></li><?php endif; ?>
-			<li class="<?php echo 'thanks' === $step ? 'is-current' : ''; ?>"><span><?php echo $is_free_registration ? 3 : 4; ?></span><strong><?php esc_html_e( 'पूर्ण', 'samanvay' ); ?></strong></li>
+			<li class="<?php echo 'payment' === $step ? 'is-current' : ( 'thanks' === $step ? 'is-complete' : '' ); ?>"><span>3</span><strong><?php esc_html_e( 'भुगतान', 'samanvay' ); ?></strong></li>
+			<li class="<?php echo 'thanks' === $step ? 'is-current' : ''; ?>"><span>4</span><strong><?php esc_html_e( 'पूर्ण', 'samanvay' ); ?></strong></li>
 		</ol>
 
 		<?php if ( $error_code ) : ?><div class="membership-alert membership-alert--error" role="alert"><?php echo esc_html( samanvay_membership_error_message( $error_code ) ); ?></div><?php endif; ?>
@@ -75,14 +70,13 @@ if ( in_array( $step, array( 'family', 'payment' ), true ) && ! $member ) {
 				</div>
 				<div class="membership-form-error" role="alert" hidden></div>
 				<label class="membership-terms" for="member-accept-terms"><input id="member-accept-terms" type="checkbox" name="accept_terms" value="1" required><span><?php esc_html_e( 'मैंने नियमावली पढ़ ली है। एवं मैं सारे बिंदुओं से सहमत हूँ।', 'samanvay' ); ?></span></label>
-				<p class="membership-note"><?php echo $is_free_registration ? esc_html__( 'अन्य जानकारी जमा करते ही आपका खाता निःशुल्क आजीवन सक्रिय हो जाएगा।', 'samanvay' ) : esc_html__( 'आपका खाता अंतिम भुगतान चरण का प्रमाण जमा करने के बाद बनाया जाएगा।', 'samanvay' ); ?></p>
-				<button class="membership-submit" type="submit"><?php esc_html_e( 'अगले चरण पर जाएँ', 'samanvay' ); ?><span aria-hidden="true">→</span></button>
+				<button class="membership-submit" type="submit"><?php esc_html_e( 'आगे बढ़ें और खाता बनाएँ', 'samanvay' ); ?><span aria-hidden="true">→</span></button>
 			</form>
 		</div>
 		<p class="membership-login-link"><?php esc_html_e( 'पहले से सदस्य हैं?', 'samanvay' ); ?> <a href="<?php echo esc_url( samanvay_get_member_login_url() ); ?>"><?php esc_html_e( 'सदस्य लॉगिन करें', 'samanvay' ); ?></a></p>
 		<?php elseif ( 'family' === $step ) : ?>
 		<div class="membership-card">
-			<header><h2><?php esc_html_e( 'अन्य जानकारी', 'samanvay' ); ?></h2><p><?php echo $is_free_registration ? esc_html__( 'निःशुल्क आजीवन सदस्यता पूरी करने के लिए आवश्यक जानकारी भरें।', 'samanvay' ) : esc_html__( 'भुगतान चरण पर जाने से पहले आवश्यक जानकारी भरें।', 'samanvay' ); ?></p></header>
+			<header><h2><?php esc_html_e( 'अन्य जानकारी', 'samanvay' ); ?></h2><p><?php esc_html_e( 'भुगतान चरण पर जाने से पहले आवश्यक जानकारी भरें।', 'samanvay' ); ?></p></header>
 			<form class="membership-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="samanvay_save_member_family_details">
 				<input type="hidden" name="member_id" value="<?php echo esc_attr( $member_id ); ?>">
@@ -98,7 +92,7 @@ if ( in_array( $step, array( 'family', 'payment' ), true ) && ! $member ) {
 					<fieldset class="membership-nominee membership-field--wide"><legend><?php esc_html_e( 'नॉमिनी 1', 'samanvay' ); ?></legend><div class="membership-nominee__grid"><p class="membership-field"><label for="member-nominee-one-name"><?php esc_html_e( 'नॉमिनी का नाम', 'samanvay' ); ?> *</label><input id="member-nominee-one-name" name="nominee_one_name" type="text" maxlength="190" required></p><p class="membership-field"><label for="member-nominee-one-relationship"><?php esc_html_e( 'नॉमिनी का संबंध', 'samanvay' ); ?> *</label><select id="member-nominee-one-relationship" name="nominee_one_relationship" required><option value=""><?php esc_html_e( 'संबंध चुनें', 'samanvay' ); ?></option><?php foreach ( samanvay_get_nominee_relationships() as $relationship_value => $relationship_label ) : ?><option value="<?php echo esc_attr( $relationship_value ); ?>"><?php echo esc_html( $relationship_label ); ?></option><?php endforeach; ?></select></p></div></fieldset>
 					<fieldset class="membership-nominee membership-field--wide"><legend><?php esc_html_e( 'नॉमिनी 2', 'samanvay' ); ?></legend><div class="membership-nominee__grid"><p class="membership-field"><label for="member-nominee-two-name"><?php esc_html_e( 'नॉमिनी का नाम', 'samanvay' ); ?> *</label><input id="member-nominee-two-name" name="nominee_two_name" type="text" maxlength="190" required></p><p class="membership-field"><label for="member-nominee-two-relationship"><?php esc_html_e( 'नॉमिनी का संबंध', 'samanvay' ); ?> *</label><select id="member-nominee-two-relationship" name="nominee_two_relationship" required><option value=""><?php esc_html_e( 'संबंध चुनें', 'samanvay' ); ?></option><?php foreach ( samanvay_get_nominee_relationships() as $relationship_value => $relationship_label ) : ?><option value="<?php echo esc_attr( $relationship_value ); ?>"><?php echo esc_html( $relationship_label ); ?></option><?php endforeach; ?></select></p></div></fieldset>
 				</div>
-				<button class="membership-submit" type="submit"><?php echo $is_free_registration ? esc_html__( 'निःशुल्क पंजीकरण पूरा करें', 'samanvay' ) : esc_html__( 'भुगतान चरण पर जाएँ', 'samanvay' ); ?><span aria-hidden="true">→</span></button>
+				<button class="membership-submit" type="submit"><?php esc_html_e( 'भुगतान चरण पर जाएँ', 'samanvay' ); ?><span aria-hidden="true">→</span></button>
 			</form>
 		</div>
 		<?php elseif ( 'payment' === $step ) : ?>
@@ -115,7 +109,7 @@ if ( in_array( $step, array( 'family', 'payment' ), true ) && ! $member ) {
 			</form></div>
 		</div>
 		<?php else : ?>
-		<div class="membership-card membership-thanks"><span class="membership-thanks__icon"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="27"/><path d="m19 33 9 9 18-21"/></svg></span><h2><?php echo $is_free_registration ? esc_html__( 'धन्यवाद! आपकी आजीवन सदस्यता सक्रिय है', 'samanvay' ) : esc_html__( 'धन्यवाद! आपका आवेदन प्राप्त हुआ', 'samanvay' ); ?></h2><p><?php echo $is_free_registration ? esc_html__( 'आपका पंजीकरण सफल है। कोई शुल्क, भुगतान प्रमाण या प्रशासक की स्वीकृति आवश्यक नहीं है। अब सदस्य लॉगिन करें।', 'samanvay' ) : esc_html__( 'आपके पंजीकरण और प्रथम सदस्यता शुल्क का भुगतान प्रमाण प्राप्त हो गया है। प्रशासक की स्वीकृति के बाद सदस्यता सक्रिय होगी। लॉगिन करके डैशबोर्ड में भुगतान की स्थिति देखें।', 'samanvay' ); ?></p><a class="membership-submit" href="<?php echo esc_url( samanvay_get_member_login_url() ); ?>"><?php esc_html_e( 'सदस्य लॉगिन करें', 'samanvay' ); ?> <span aria-hidden="true">→</span></a></div>
+		<div class="membership-card membership-thanks"><span class="membership-thanks__icon"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="27"/><path d="m19 33 9 9 18-21"/></svg></span><h2><?php esc_html_e( 'धन्यवाद! आपका आवेदन प्राप्त हुआ', 'samanvay' ); ?></h2><p><?php esc_html_e( 'आपके पंजीकरण और प्रथम सदस्यता शुल्क का भुगतान प्रमाण प्राप्त हो गया है। प्रशासक की स्वीकृति के बाद सदस्यता सक्रिय होगी। लॉगिन करके डैशबोर्ड में भुगतान की स्थिति देखें।', 'samanvay' ); ?></p><a class="membership-submit" href="<?php echo esc_url( samanvay_get_member_login_url() ); ?>"><?php esc_html_e( 'सदस्य लॉगिन करें', 'samanvay' ); ?> <span aria-hidden="true">→</span></a></div>
 		<?php endif; ?>
 	</div></section>
 </main>
